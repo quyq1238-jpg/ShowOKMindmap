@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MM Studio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<section id="home">
+  <header class="top"><b class="logo">◉ MM Studio</b><span>Trình xem sơ đồ tư duy .mm</span></header>
+  <main>
+    <div id="drop" tabindex="0">
+      <h1>Mở sơ đồ tư duy .mm</h1>
+      <p>Kéo thả tệp vào đây hoặc</p>
+      <button id="pick" class="primary">Chọn tệp từ máy tính</button>
+      <input id="file" type="file" accept=".mm,.xml" hidden>
+      <p id="err" class="err" role="alert"></p>
+    </div>
+    <div class="cols">
+      <div><h2>Sơ đồ được chia sẻ</h2><ul id="shared"><li class="muted">Đang tải…</li></ul></div>
+      <div><h2>Gần đây (trên máy này)</h2><ul id="recent"></ul></div>
+    </div>
+    <p class="muted help">Mẹo: bấm vào nút có nhãn ▶ để xem nội dung nhúng (iframe) ở khung bên phải. Phím tắt: <kbd>/</kbd> tìm kiếm, <kbd>+</kbd>/<kbd>-</kbd> thu phóng, <kbd>0</kbd> vừa khung, <kbd>F</kbd> toàn màn hình, <kbd>Esc</kbd> đóng khung nội dung.</p>
+  </main>
+</section>
+
+<section id="work" hidden>
+  <div id="bar">
+    <button id="bHome" title="Về trang chủ / mở tệp khác">⌂</button>
+    <b id="title"></b>
+    <span class="sep"></span>
+    <input id="q" type="search" placeholder="Tìm trong sơ đồ…  ( / )" autocomplete="off">
+    <span id="qc" class="muted"></span>
+    <button id="qPrev" title="Kết quả trước">↑</button><button id="qNext" title="Kết quả sau">↓</button>
+    <span class="sep"></span>
+    <button id="bCollapse" title="Thu gọn tất cả nhánh">⊟</button>
+    <button id="bExpand" title="Mở rộng tất cả nhánh">⊞</button>
+    <button id="bOut" title="Thu nhỏ">−</button><span id="zoomv">100%</span><button id="bIn" title="Phóng to">+</button>
+    <button id="bFit" title="Đưa toàn bộ sơ đồ vào khung nhìn">⤢</button>
+    <button id="bPanel" title="Bật/tắt khung nội dung">▤</button>
+    <button id="bFull" title="Toàn màn hình">⛶</button>
+    <button id="bShare" title="Chia sẻ sơ đồ">⇪</button>
+    <button id="bInfo" title="Thông tin sơ đồ">ⓘ</button>
+  </div>
+  <div id="view">
+    <div id="viewport"><div id="stage"><svg id="edges" width="1" height="1"></svg><div id="nodes"></div></div></div>
+    <aside id="panel" hidden>
+      <div class="ph"><b id="pTitle"></b><span class="sep"></span>
+        <a id="pOpen" target="_blank" rel="noopener noreferrer" class="btn">Mở tab mới ↗</a>
+        <button id="pFull" title="Toàn màn hình khung này">⛶</button><button id="pClose" title="Đóng (Esc)">✕</button></div>
+      <div id="pBody"></div>
+      <p class="muted hint" id="pHint">Nếu khung trống hoặc báo lỗi, trang nguồn có thể không cho phép nhúng — hãy dùng “Mở tab mới”.</p>
+    </aside>
+  </div>
+  <div id="status"></div>
+</section>
+<dialog id="dlg"><div id="dlgBody"></div><form method="dialog"><button class="primary">Đóng</button></form></dialog>
+<script src="app.js"></script>
+</body>
+</html>
