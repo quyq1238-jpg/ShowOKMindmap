@@ -381,8 +381,21 @@ $('#bCollapse').onclick = () => { ALL.forEach(n => setFold(n, true)); layout(); 
 $('#bExpand').onclick = () => { ALL.forEach(n => setFold(n, false)); layout(); fit(); };
 $('#bPanel').onclick = () => { if ($('#panel').hidden) showPanel(sel || R); else closePanel(); setTimeout(fit, 0); };
 $('#pClose').onclick = closePanel; $('#pFull').onclick = () => $('#pBody').requestFullscreen && ($('#pBody').querySelector('iframe') || $('#pBody')).requestFullscreen();
-const full = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
-$('#bFull').onclick = full; document.addEventListener('fullscreenchange', () => $('#work').hidden || setTimeout(fit, 150));
+// Chế độ chỉ xem sơ đồ: ẩn thanh công cụ + trạng thái, hiện nút nổi (thoát, +, −, vừa khung).
+// Kèm Fullscreen API nếu có (Chrome/Android/iPad, có tiền tố webkit cho Safari cũ); iPhone Safari không hỗ trợ nên chỉ dùng chế độ này.
+const de = document.documentElement, reqFs = de.requestFullscreen || de.webkitRequestFullscreen;
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const exitFs = () => { const x = document.exitFullscreen || document.webkitExitFullscreen; try { const p = x && x.call(document); p && p.catch && p.catch(() => { }); } catch { } };
+const isFocus = () => $('#work').classList.contains('focus');
+const setFocus = on => { $('#work').classList.toggle('focus', on); $('#bFocusExit').hidden = !on; $('#focusTools').hidden = !on; setTimeout(fit, 150); };
+const full = () => {
+  if (isFocus()) { setFocus(false); if (fsEl()) exitFs(); return; }
+  setFocus(true);
+  if (reqFs) { try { const p = reqFs.call(de); p && p.catch && p.catch(() => { }); } catch { } }
+};
+$('#bFull').onclick = full; $('#bFocusExit').onclick = full;
+$('#fIn').onclick = () => $('#bIn').click(); $('#fOut').onclick = () => $('#bOut').click(); $('#fFit').onclick = () => $('#bFit').click();
+['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => { if ($('#work').hidden) return; if (!fsEl() && isFocus()) setFocus(false); else setTimeout(fit, 150); }));
 let qt; $('#q').oninput = () => { clearTimeout(qt); qt = setTimeout(search, 180); };
 $('#q').onkeydown = e => { if (e.key === 'Enter') goHit(e.shiftKey ? -1 : 1); if (e.key === 'Escape') e.target.blur(); };
 $('#qNext').onclick = () => goHit(1); $('#qPrev').onclick = () => goHit(-1);

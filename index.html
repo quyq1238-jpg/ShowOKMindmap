@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#3556e8">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="MM Studio">
 <title>MM Studio</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=3">
 <!-- Bổ sung DOMPurify để làm sạch HTML phòng chống XSS -->
 <script src="purify.min.js"></script>
 </head>
@@ -39,7 +44,7 @@
 <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
 <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
 </defs></svg>
- 
+
 <section id="home">
   <!-- Giữ nguyên -->
   <header class="top"><b class="logo">MM Studio</b><span class="muted">Xem và trình chiếu sơ đồ tư duy .mm</span></header>
@@ -58,7 +63,7 @@
     <p class="muted help">Phím tắt: <kbd>/</kbd> tìm kiếm, <kbd>+</kbd>/<kbd>-</kbd> thu phóng, <kbd>0</kbd> vừa khung, <kbd>F</kbd> toàn màn hình, <kbd>P</kbd> bắt đầu trình chiếu với bút. Trong trình chiếu: <kbd>P</kbd> bút, <kbd>M</kbd> bút đánh dấu, <kbd>L</kbd> laser, <kbd>E</kbd> tẩy, <kbd>V</kbd> chọn/di chuyển, <kbd>H</kbd> ẩn/hiện chú thích, <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd> hoàn tác/làm lại, <kbd>Esc</kbd> thoát công cụ rồi thoát trình chiếu.</p>
   </main>
 </section>
- 
+
 <section id="work" hidden>
   <div id="bar" role="toolbar" aria-label="Công cụ sơ đồ">
     <div class="grp"><button id="bHome" title="Về trang chủ / mở tệp khác"><svg class="ic"><use href="#i-home"/></svg></button><b id="title"></b></div>
@@ -78,6 +83,8 @@
     <button id="bMore" class="mob" title="Thêm công cụ" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg></button>
   </div>
   <div id="view">
+    <button id="bFocusExit" title="Thoát chế độ chỉ xem sơ đồ" hidden><svg class="ic"><use href="#i-close"/></svg></button>
+    <div id="focusTools" hidden><button id="fIn" title="Phóng to"><svg class="ic"><use href="#i-plus"/></svg></button><button id="fOut" title="Thu nhỏ"><svg class="ic"><use href="#i-minus"/></svg></button><button id="fFit" title="Vừa khung"><svg class="ic"><use href="#i-fit"/></svg></button></div>
     <div id="viewport"><div id="stage"><svg id="edges" width="1" height="1"></svg><div id="nodes"></div><svg id="ink" width="1" height="1"></svg></div>
       <svg id="laser" aria-hidden="true"></svg><div id="inkcap" hidden></div></div>
     <aside id="panel" hidden>
@@ -111,7 +118,7 @@
   </div>
 </section>
 <dialog id="dlg"><div id="dlgBody"></div><form method="dialog"><button class="primary">Đóng</button></form></dialog>
-<script src="app.js"></script>
-<script src="present.js"></script>
+<script src="app.js?v=3"></script>
+<script src="present.js?v=3"></script>
 </body>
 </html>

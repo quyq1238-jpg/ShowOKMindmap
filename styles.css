@@ -89,3 +89,14 @@ dialog input{width:100%;padding:6px;margin:4px 0}dialog code{background:#eef;pad
  #pWidth{width:64px}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* Chế độ chỉ xem sơ đồ (toàn màn hình giả lập cho iPhone/iPad/điện thoại) */
+#work.focus #bar,#work.focus #status{display:none}
+#bFocusExit{position:absolute;top:max(8px,env(safe-area-inset-top));right:8px;z-index:6;opacity:.55;box-shadow:var(--sh)}
+#bFocusExit:hover,#bFocusExit:active{opacity:1}
+#bFocusExit[hidden]{display:none}
+#focusTools{position:absolute;right:8px;bottom:max(12px,env(safe-area-inset-bottom));z-index:6;display:flex;flex-direction:column;gap:6px;opacity:.55}
+#focusTools:hover,#focusTools:active{opacity:1}
+#focusTools[hidden]{display:none}
+#focusTools button{box-shadow:var(--sh)}
+@supports(height:100dvh){#work{height:100dvh}}
