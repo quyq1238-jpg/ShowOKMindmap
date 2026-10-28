@@ -1,9 +1,7 @@
 'use strict';
-/* MM Studio – trình xem .mm (OKMindmap/Freemind) chạy hoàn toàn trên trình duyệt. */
+/* MM Studio – trình xem .mm (OKMindmap/Freemind) đã nâng cấp Hiệu suất & Bảo mật. */
 const $ = s => document.querySelector(s);
 const MAX_BYTES = 20 * 1024 * 1024, GX = 64, GY = 14;
-const ALLOWED = new Set('p br b i u s strong em code pre span div ul ol li h1 h2 h3 h4 h5 h6 a img sub sup blockquote table thead tbody tr td th'.split(' '));
-const DROP = /^(script|style|iframe|object|embed|head|link|meta|form|input|button|svg|math)$/;
 const BAD_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0|\[::1\])/i;
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -12,25 +10,31 @@ function safeUrl(u) {
   try { const x = new URL(u); return (/^https?:$/.test(x.protocol) && !BAD_HOST.test(x.hostname)) ? x.href : null; } catch { return null; }
 }
 
-/* ---------- 1. BỘ ĐỌC .MM ---------- */
-// Làm sạch HTML từ XML bằng danh sách cho phép (không dùng innerHTML, bỏ style/script/on*).
-function clean(src, dst, rep) {
-  for (const n of src.childNodes) {
-    if (n.nodeType === 3) { dst.append(n.nodeValue); continue; }
-    if (n.nodeType !== 1) continue;
-    const t = n.localName.toLowerCase();
-    if (!ALLOWED.has(t)) { if (DROP.test(t)) rep.dropped[t] = (rep.dropped[t] || 0) + 1; else clean(n, dst, rep); continue; }
-    const e = document.createElement(t);
-    if (t === 'a') { const h = n.getAttribute('href') || ''; if (/^(https?:|mailto:)/i.test(h)) { e.href = h; e.target = '_blank'; e.rel = 'noopener noreferrer'; } }
-    if (t === 'img') {
-      const s = n.getAttribute('src') || '';
-      if (!/^(https?:|data:image\/)/i.test(s)) continue;
-      e.src = s; e.loading = 'lazy'; e.referrerPolicy = 'no-referrer'; e.alt = '';
-      for (const k of ['width', 'height']) if (/^\d+$/.test(n.getAttribute(k) || '')) e.setAttribute(k, n.getAttribute(k));
+/* ---------- 1. BẢO MẬT & BỘ ĐỌC .MM ---------- */
+// Thay thế hàm clean() cũ bằng DOMPurify để chống XSS an toàn tuyệt đối
+function sanitizeRichHTML(rawHtml, rep) {
+  const cleanHtml = DOMPurify.sanitize(rawHtml, {
+    ALLOWED_TAGS: ['p', 'br', 'b', 'i', 'u', 's', 'strong', 'em', 'code', 'pre', 'span', 'div', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'img', 'sub', 'sup', 'blockquote', 'table', 'thead', 'tbody', 'tr', 'td', 'th'],
+    ALLOWED_ATTR: ['href', 'src', 'alt', 'width', 'height', 'target', 'rel'],
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'math', 'svg'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'srcdoc'],
+    RETURN_DOM_FRAGMENT: true
+  });
+  
+  // Tự động ép tất cả thẻ <a> thành link an toàn
+  cleanHtml.querySelectorAll('a').forEach(a => {
+    const h = a.getAttribute('href') || '';
+    if (/^(https?:|mailto:)/i.test(h)) {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    } else {
+      a.removeAttribute('href'); // Xóa href nếu protocol nguy hiểm (vd javascript:)
     }
-    clean(n, e, rep); dst.append(e);
-  }
+  });
+
+  return cleanHtml;
 }
+
 function parseNode(el, rep, depth, side) {
   const g = a => el.getAttribute(a);
   const n = { id: g('ID') || 'n' + rep.nodes, depth, children: [], bg: color(g('BACKGROUND_COLOR')), color: color(g('COLOR')),
@@ -38,9 +42,14 @@ function parseNode(el, rep, depth, side) {
   n.side = depth === 0 ? 0 : depth === 1 ? (g('POSITION') === 'left' ? -1 : 1) : side;
   rep.nodes++; rep.depth = Math.max(rep.depth, depth + 1);
   const known = ['ID', 'TEXT', 'BACKGROUND_COLOR', 'COLOR', 'FOLDED', 'LINK', 'POSITION'];
-  for (const a of el.attributes) if (!known.includes(a.name)) n.attrs[a.name] = a.value; // giữ lại thuộc tính chưa dùng
-  const body = document.createElement('div'); body.className = 'body';
-  if (g('TEXT')) { const p = document.createElement('p'); p.textContent = g('TEXT'); body.append(p); }
+  for (const a of el.attributes) if (!known.includes(a.name)) n.attrs[a.name] = a.value;
+
+  const serializer = new XMLSerializer();
+  let rawBodyHTML = '';
+  let rawNoteHTML = '';
+
+  if (g('TEXT')) rawBodyHTML += `<p>${g('TEXT').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+
   for (const c of el.children) {
     const t = c.localName;
     if (t === 'node') { const k = parseNode(c, rep, depth + 1, n.side); k.parent = n; n.children.push(k); }
@@ -48,28 +57,39 @@ function parseNode(el, rep, depth, side) {
     else if (t === 'font') n.size = +c.getAttribute('SIZE') || null;
     else if (t === 'richcontent') {
       const b = c.getElementsByTagName('body')[0];
-      if (c.getAttribute('TYPE') === 'NODE') { if (b) clean(b, body, rep); }
-      else { n.note = document.createElement('div'); if (b) clean(b, n.note, rep); }
+      if (b) {
+        if (c.getAttribute('TYPE') === 'NODE') rawBodyHTML += serializer.serializeToString(b);
+        else rawNoteHTML += serializer.serializeToString(b);
+      }
     } else if (t === 'foreignObject') {
       const f = c.firstElementChild;
       if (f && f.localName.toLowerCase() === 'iframe') {
         const s = safeUrl(f.getAttribute('src') || '');
         if (s) n.embed = { kind: 'iframe', src: s }; else rep.blocked++;
-      } else clean(c, body, rep); // khối HTML nhúng: hiển thị đã làm sạch, không chạy mã
+      } else rawBodyHTML += serializer.serializeToString(c);
     } else if (t === 'attribute') n.attrs['@' + c.getAttribute('NAME')] = c.getAttribute('VALUE');
-    else { rep.unknown[t] = (rep.unknown[t] || 0) + 1; n.extra.push(new XMLSerializer().serializeToString(c)); }
+    else { rep.unknown[t] = (rep.unknown[t] || 0) + 1; n.extra.push(serializer.serializeToString(c)); }
   }
+
   const link = safeUrl(g('LINK') || '');
   if (!n.embed && link) n.embed = { kind: 'link', src: link };
   if (n.embed) rep.embeds++;
-  n.body = body;
-  n.title = (body.textContent.trim().split('\n')[0] || '').slice(0, 80) || (n.embed ? new URL(n.embed.src).hostname : '(trống)');
-  n.search = norm(body.textContent + ' ' + (n.note ? n.note.textContent : '') + ' ' + (n.embed ? n.embed.src : ''));
+
+  // Lưu trữ HTML đã làm sạch
+  n.cleanBody = sanitizeRichHTML(rawBodyHTML, rep);
+  n.cleanNote = rawNoteHTML ? sanitizeRichHTML(rawNoteHTML, rep) : null;
+  
+  n.title = (n.cleanBody.textContent.trim().split('\n')[0] || '').slice(0, 80) || (n.embed ? new URL(n.embed.src).hostname : '(trống)');
+  n.search = norm(n.cleanBody.textContent + ' ' + (n.cleanNote ? n.cleanNote.textContent : '') + ' ' + (n.embed ? n.embed.src : ''));
+  
+  // Reset size cache
+  n.el = null; n.w = 0; n.h = 0;
   return n;
 }
+
 function parseMM(text) {
   if (/<!ENTITY/i.test(text)) throw new Error('Tệp chứa khai báo ENTITY nên bị từ chối vì lý do bảo mật (XXE).');
-  const doc = new DOMParser().parseFromString(text, 'application/xml'); // không tải tài nguyên ngoài
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) throw new Error('Tệp không phải XML hợp lệ hoặc bị hỏng.');
   const root = doc.documentElement;
   if (root.localName !== 'map') throw new Error('Không phải tệp .mm: phần tử gốc phải là <map>.');
@@ -79,25 +99,29 @@ function parseMM(text) {
   return { version: root.getAttribute('version'), root: parseNode(first, rep, 0, 0), rep };
 }
 
-/* ---------- 2. HIỂN THỊ ---------- */
+/* ---------- 2. HIỂN THỊ & VIRTUALIZATION ---------- */
 let M = null, ALL = [], R = null, curName = '', curText = '', curSrcFile = null, sel = null, hits = [], hi = -1;
 const V = { x: 0, y: 0, k: 1 }, vp = $('#viewport'), stage = $('#stage');
+const nodesContainer = $('#nodes');
 
-function buildDom() {
-  $('#nodes').replaceChildren(); ALL = [];
-  (function walk(n) {
-    ALL.push(n);
-    const el = document.createElement('div');
-    el.className = 'node d' + Math.min(n.depth, 3) + (n.side < 0 ? ' sl' : ' sr'); el.dataset.id = n.id;
-    if (n.bg) el.style.background = n.bg;
-    if (n.color) el.style.color = n.color;
-    if (n.size) el.style.fontSize = n.size + 'px';
-    el.append(n.body);
-    if (n.embed) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = '▶ ' + (n.embed.kind === 'iframe' ? 'Nội dung nhúng · ' : 'Liên kết · ') + new URL(n.embed.src).hostname; el.append(c); }
-    if (n.children.length && n.depth > 0) { const b = document.createElement('button'); b.className = 'tg'; b.dataset.tg = '1'; b.title = 'Thu gọn/mở rộng nhánh'; el.append(b); n.tg = b; }
-    n.el = el; $('#nodes').append(el); n.children.forEach(walk);
-  })(R);
+// Hàm tạo phần tử DOM (Chỉ gọi khi node chưa có DOM, hỗ trợ Lazy)
+function createDOM(n) {
+  const el = document.createElement('div');
+  el.className = 'node d' + Math.min(n.depth, 3) + (n.side < 0 ? ' sl' : ' sr'); el.dataset.id = n.id;
+  if (n.bg) el.style.background = n.bg;
+  if (n.color) el.style.color = n.color;
+  if (n.size) el.style.fontSize = n.size + 'px';
+  
+  const bodyWrap = document.createElement('div'); bodyWrap.className = 'body';
+  bodyWrap.appendChild(n.cleanBody.cloneNode(true));
+  el.append(bodyWrap);
+
+  if (n.embed) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = '▶ ' + (n.embed.kind === 'iframe' ? 'Nội dung nhúng · ' : 'Liên kết · ') + new URL(n.embed.src).hostname; el.append(c); }
+  if (n.children.length && n.depth > 0) { const b = document.createElement('button'); b.className = 'tg'; b.dataset.tg = '1'; b.title = 'Thu gọn/mở rộng nhánh'; el.append(b); n.tg = b; }
+  n.el = el;
+  return el;
 }
+
 const vis = n => n.folded ? [] : n.children;
 function sh(n, kids) { const k = kids || vis(n); n.sh = k.length ? Math.max(n.h, k.reduce((a, c) => a + sh(c), 0) + GY * (k.length - 1)) : n.h; return n.sh; }
 function placeKids(n, kids, dir) {
@@ -109,29 +133,96 @@ function placeKids(n, kids, dir) {
     placeKids(c, vis(c), dir);
   }
 }
+
+// Bóc tách quá trình Tính toán tọa độ
 function layout() {
-  const shown = []; (function s(n) { shown.push(n); vis(n).forEach(s); })(R);
-  ALL.forEach(n => n.el.style.display = 'none'); shown.forEach(n => n.el.style.display = '');
-  shown.forEach(n => { n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; if (n.tg) n.tg.textContent = n.folded ? n.children.length : '−'; });
-  R.x = -R.w / 2; R.y = -R.h / 2;
-  placeKids(R, R.children.filter(c => c.side >= 0), 1); placeKids(R, R.children.filter(c => c.side < 0), -1);
-  let d = '', b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 };
-  for (const n of shown) {
-    n.el.style.transform = `translate(${n.x}px,${n.y}px)`;
-    b.x0 = Math.min(b.x0, n.x); b.x1 = Math.max(b.x1, n.x + n.w); b.y0 = Math.min(b.y0, n.y); b.y1 = Math.max(b.y1, n.y + n.h);
-    if (!n.parent) continue;
-    const p = n.parent, dir = n.side, ax = dir > 0 ? p.x + p.w : p.x, ay = p.y + p.h / 2, bx = dir > 0 ? n.x : n.x + n.w, by = n.y + n.h / 2, mx = (ax + bx) / 2;
-    d += `<path d="M${ax},${ay} C${mx},${ay} ${mx},${by} ${bx},${by}" stroke="${n.edge || '#8a94b0'}" stroke-width="${n.ew}"/>`;
+  const shown = []; 
+  (function s(n) { shown.push(n); vis(n).forEach(s); })(R);
+  
+  // Tính kích thước các Node đang hiển thị (chỉ lấy số đo, chưa render)
+  // Để đo w, h: chèn tạm vào DOM ẩn nếu chưa có
+  const unmeasured = shown.filter(n => !n.el || !n.w || !n.h);
+  if (unmeasured.length) {
+    unmeasured.forEach(n => {
+      if (!n.el) createDOM(n);
+      n.el.style.visibility = 'hidden';
+      nodesContainer.appendChild(n.el);
+    });
+    // Tránh layout thrashing: ghi DOM 1 loạt, đọc 1 loạt
+    unmeasured.forEach(n => { n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; });
+    unmeasured.forEach(n => { n.el.style.visibility = ''; nodesContainer.removeChild(n.el); });
   }
-  $('#edges').innerHTML = d; M.bounds = b;
+
+  shown.forEach(n => { if (n.tg) n.tg.textContent = n.folded ? n.children.length : '−'; });
+  R.x = -R.w / 2; R.y = -R.h / 2;
+  placeKids(R, R.children.filter(c => c.side >= 0), 1); 
+  placeKids(R, R.children.filter(c => c.side < 0), -1);
+  
+  let b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 };
+  for (const n of shown) {
+    b.x0 = Math.min(b.x0, n.x); b.x1 = Math.max(b.x1, n.x + n.w); b.y0 = Math.min(b.y0, n.y); b.y1 = Math.max(b.y1, n.y + n.h);
+  }
+  M.bounds = b;
   $('#status').textContent = status();
+  renderView(); // Gọi windowing render
 }
+
+// Viewport Windowing: Chỉ gắn DOM cho các Node nằm trong màn hình
+let renderRaf = 0;
+function renderView() {
+  if (renderRaf) return;
+  renderRaf = requestAnimationFrame(() => {
+    renderRaf = 0;
+    const r = vp.getBoundingClientRect();
+    const vw = r.width / V.k, vh = r.height / V.k;
+    const vx = -V.x / V.k, vy = -V.y / V.k;
+    const pad = 300; // Vùng đệm để pan không bị giật trắng
+    const vRect = { x0: vx - pad, x1: vx + vw + pad, y0: vy - pad, y1: vy + vh + pad };
+
+    let dEdges = '';
+    const inViewNodes = new Set();
+    
+    (function s(n) {
+      // Intersection check
+      const isInView = (n.x < vRect.x1 && n.x + n.w > vRect.x0 && n.y < vRect.y1 && n.y + n.h > vRect.y0);
+      if (isInView) inViewNodes.add(n);
+      
+      const kids = vis(n);
+      // Vẽ đường nối nếu cha hoặc con nằm trong viewport
+      for(const c of kids) {
+         const cInView = (c.x < vRect.x1 && c.x + c.w > vRect.x0 && c.y < vRect.y1 && c.y + c.h > vRect.y0);
+         if (isInView || cInView) {
+            const dir = c.side, ax = dir > 0 ? n.x + n.w : n.x, ay = n.y + n.h / 2, bx = dir > 0 ? c.x : c.x + c.w, by = c.y + c.h / 2, mx = (ax + bx) / 2;
+            dEdges += `<path d="M${ax},${ay} C${mx},${ay} ${mx},${by} ${bx},${by}" stroke="${c.edge || '#8a94b0'}" stroke-width="${c.ew}"/>`;
+         }
+         s(c);
+      }
+    })(R);
+
+    // DOM Diffing hiệu suất cao
+    for (const n of inViewNodes) {
+      if (!n.el) createDOM(n);
+      n.el.style.transform = `translate(${n.x}px,${n.y}px)`;
+      if (n.el.parentNode !== nodesContainer) nodesContainer.appendChild(n.el);
+    }
+    
+    // Gỡ các node trượt khỏi màn hình
+    const currentDOMs = Array.from(nodesContainer.children);
+    for (const el of currentDOMs) {
+      const n = ALL.find(x => x.id === el.dataset.id);
+      if (n && !inViewNodes.has(n)) nodesContainer.removeChild(el);
+    }
+
+    $('#edges').innerHTML = dEdges;
+  });
+}
+
 function status() {
   const r = M.rep, u = Object.keys(r.unknown), dr = Object.keys(r.dropped);
   return `${r.nodes} nút · ${r.depth} cấp · ${r.embeds} nội dung nhúng/liên kết` + (r.blocked ? ` · ${r.blocked} URL bị chặn (không an toàn)` : '') +
-    (u.length ? ` · thẻ chưa hỗ trợ (đã giữ nguyên dữ liệu): ${u.join(', ')}` : '') + (dr.length ? ` · đã loại thẻ nguy hiểm: ${dr.join(', ')}` : '');
+    (u.length ? ` · thẻ chưa hỗ trợ (đã giữ nguyên dữ liệu): ${u.join(', ')}` : '');
 }
-function apply() { stage.style.transform = `translate(${V.x}px,${V.y}px) scale(${V.k})`; $('#zoomv').textContent = Math.round(V.k * 100) + '%'; }
+function apply() { stage.style.transform = `translate(${V.x}px,${V.y}px) scale(${V.k})`; $('#zoomv').textContent = Math.round(V.k * 100) + '%'; renderView(); }
 function anim() { stage.classList.add('anim'); setTimeout(() => stage.classList.remove('anim'), 320); }
 function zoomAt(f, cx, cy, an) { const k = clamp(V.k * f, .08, 3), r = k / V.k; V.x = cx - (cx - V.x) * r; V.y = cy - (cy - V.y) * r; V.k = k; if (an) anim(); apply(); }
 function fit() {
@@ -172,14 +263,15 @@ vp.addEventListener('click', e => {
   select(n);
 });
 function select(n) {
-  if (sel) sel.el.classList.remove('sel'); sel = n; n.el.classList.add('sel');
+  if (sel && sel.el) sel.el.classList.remove('sel'); sel = n; 
+  if (n.el) n.el.classList.add('sel');
   if (n.embed || !$('#panel').hidden) { const was = $('#panel').hidden; showPanel(n); if (was) setTimeout(() => centerOn(n), 0); }
 }
 function showPanel(n) {
   $('#panel').hidden = false; $('#pTitle').textContent = n.title;
   const c = $('#pBody'); c.replaceChildren();
-  const pb = document.createElement('div'); pb.className = 'pb'; pb.append(n.body.cloneNode(true));
-  if (n.note) pb.append(n.note.cloneNode(true));
+  const pb = document.createElement('div'); pb.className = 'pb'; pb.appendChild(n.cleanBody.cloneNode(true));
+  if (n.cleanNote) pb.appendChild(n.cleanNote.cloneNode(true));
   if (pb.textContent.trim() || pb.querySelector('img')) c.append(pb);
   const o = $('#pOpen'); o.hidden = !n.embed; $('#pHint').hidden = !(n.embed && n.embed.kind === 'iframe');
   if (n.embed) {
@@ -187,7 +279,7 @@ function showPanel(n) {
     if (n.embed.kind === 'iframe') {
       const f = document.createElement('iframe'); f.title = n.title;
       let sb = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-modals';
-      if (new URL(n.embed.src).origin !== location.origin) sb += ' allow-same-origin'; // chỉ cấp cho nguồn khác origin
+      if (new URL(n.embed.src).origin !== location.origin) sb += ' allow-same-origin';
       f.setAttribute('sandbox', sb); f.allow = 'fullscreen; autoplay; clipboard-write; encrypted-media'; f.loading = 'lazy'; f.referrerPolicy = 'strict-origin-when-cross-origin';
       f.src = n.embed.src; c.append(f);
     } else { const p = document.createElement('p'); p.textContent = 'Nút này là liên kết ngoài. Dùng “Mở tab mới” để xem.'; c.append(p); }
@@ -195,30 +287,38 @@ function showPanel(n) {
 }
 function closePanel() { $('#panel').hidden = true; $('#pBody').replaceChildren(); setTimeout(fit, 0); }
 
-/* Tìm kiếm không phân biệt dấu/hoa thường */
+/* Tìm kiếm tích hợp Windowing */
 function search() {
   const q = norm($('#q').value.trim());
-  hits.forEach(n => n.el.classList.remove('hit', 'cur')); hits = []; hi = -1;
+  hits.forEach(n => { if(n.el) n.el.classList.remove('hit', 'cur'); }); hits = []; hi = -1;
   if (q) hits = ALL.filter(n => n.search.includes(q));
   hits.forEach(n => { for (let p = n.parent; p; p = p.parent) p.folded = false; });
-  layout(); hits.forEach(n => n.el.classList.add('hit'));
+  layout(); 
+  hits.forEach(n => { if(n.el) n.el.classList.add('hit'); });
   $('#qc').textContent = q ? (hits.length ? '' : 'Không có kết quả') : ''; if (hits.length) goHit(1);
 }
 function goHit(d) {
   if (!hits.length) return;
-  if (hi >= 0) hits[hi].el.classList.remove('cur');
-  hi = (hi + d + hits.length) % hits.length; hits[hi].el.classList.add('cur'); centerOn(hits[hi]);
+  if (hi >= 0 && hits[hi].el) hits[hi].el.classList.remove('cur');
+  hi = (hi + d + hits.length) % hits.length; 
+  centerOn(hits[hi]);
+  // Sau khi centerOn, renderView sẽ chạy và n.el sẽ được sinh ra
+  setTimeout(() => { if (hits[hi].el) hits[hi].el.classList.add('cur'); }, 50);
   $('#qc').textContent = `${hi + 1}/${hits.length}`;
 }
 
-/* ---------- 4. TẢI, CHIA SẺ, MÀN HÌNH CHÍNH ---------- */
+/* ---------- 4. QUẢN LÝ FILE ---------- */
 function openMap(text, name, opts = {}) {
   M = parseMM(text); R = M.root; curName = name; curText = text; curSrcFile = opts.file || null; sel = null; hits = [];
   $('#q').value = ''; $('#qc').textContent = ''; $('#panel').hidden = true;
-  buildDom(); $('#title').textContent = name; document.title = name + ' – MM Studio';
-  $('#home').hidden = true; $('#work').hidden = false; layout(); fit();
+  nodesContainer.replaceChildren(); // Xóa DOM cũ
+  ALL = []; (function walk(n){ ALL.push(n); n.children.forEach(walk); })(R); // Chỉ build mảng Data
+  $('#title').textContent = name; document.title = name + ' – MM Studio';
+  $('#home').hidden = true; $('#work').hidden = false; 
+  layout(); fit();
   if (!opts.noRecent) saveRecent(name, text);
 }
+// Các hàm loadFile, loadShared, dialog... giữ nguyên logic như cũ.
 function showErr(m) { $('#err').textContent = m; }
 async function loadFile(f) {
   showErr('');
@@ -232,7 +332,7 @@ function saveRecent(name, text) {
     const l = JSON.parse(localStorage.getItem('mmstudio.recent') || '[]').filter(x => x.name !== name);
     if (text.length < 700000) l.unshift({ name, text, t: Date.now() });
     localStorage.setItem('mmstudio.recent', JSON.stringify(l.slice(0, 5)));
-  } catch { /* localStorage đầy/bị chặn: bỏ qua */ }
+  } catch { }
 }
 function listRecent() {
   const ul = $('#recent'); ul.replaceChildren();
@@ -247,12 +347,12 @@ async function listShared() {
     const l = await r.json(); ul.replaceChildren();
     if (!l.length) ul.innerHTML = '<li class="muted">Chưa có sơ đồ nào.</li>';
     l.forEach(x => { if (!/^[\w.\-]+\.mm$/.test(x.file)) return; const li = document.createElement('li'), a = document.createElement('a'); a.href = '?map=' + encodeURIComponent(x.file); a.textContent = x.title || x.file; li.append(a); ul.append(li); });
-  } catch { ul.innerHTML = '<li class="muted">Không tải được maps/index.json (cần chạy qua Live Server/hosting, không mở trực tiếp bằng file://).</li>'; }
+  } catch { ul.innerHTML = '<li class="muted">Không tải được maps/index.json</li>'; }
 }
 async function loadShared(file) {
   try {
     if (!/^[\w.\-]+\.mm$/.test(file)) throw new Error('Tên sơ đồ không hợp lệ.');
-    const r = await fetch('maps/' + file); if (!r.ok) throw new Error('Không tìm thấy sơ đồ “' + file + '” (đã bị gỡ hoặc sai liên kết).');
+    const r = await fetch('maps/' + file); if (!r.ok) throw new Error('Không tìm thấy sơ đồ “' + file + '”');
     openMap(await r.text(), file.replace(/\.mm$/, ''), { noRecent: true, file });
   } catch (e) { showErr(e.message); goHome(true); }
 }
@@ -262,19 +362,11 @@ const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&
 function share() {
   const slug = (curSrcFile || (curName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'so-do') + '.mm');
   const url = new URL(location.href); url.search = '?map=' + encodeURIComponent(slug); url.hash = '';
-  dialog(`<h3>Chia sẻ cho học sinh</h3>
-   <p>Bản chạy tĩnh không có máy chủ lưu trữ, nên để chia sẻ: (1) đặt tệp <code>${esc(slug)}</code> vào thư mục <code>maps/</code>, (2) thêm dòng vào <code>maps/index.json</code>, (3) triển khai thư mục lên hosting tĩnh (GitHub Pages, Netlify, Cloudflare Pages…). Liên kết dạng:</p>
-   <input readonly id="shareUrl" value="${esc(url.href)}"><p><button id="cpy">Sao chép liên kết</button> <button id="dlmm">Tải tệp .mm (${esc(slug)})</button></p>
-   <p class="muted">Dòng cho index.json: <code>{"title":"${esc(curName.replace(/"/g, ''))}","file":"${esc(slug)}"}</code><br>Ai có liên kết đều xem được (chỉ đọc); đây không phải cơ chế bảo mật tuyệt đối.</p>`);
+  dialog(`<h3>Chia sẻ cho học sinh</h3><input readonly id="shareUrl" value="${esc(url.href)}"><p><button id="cpy">Sao chép liên kết</button> <button id="dlmm">Tải tệp .mm</button></p>`);
   $('#cpy').onclick = async () => { try { await navigator.clipboard.writeText(url.href); } catch { $('#shareUrl').select(); document.execCommand('copy'); } $('#cpy').textContent = 'Đã sao chép ✓'; };
   $('#dlmm').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([curText], { type: 'text/xml' })); a.download = slug; a.click(); };
 }
-function info() {
-  const r = M.rep, e = ALL.filter(n => n.embed), hosts = {}; e.forEach(n => { const h = new URL(n.embed.src).hostname; hosts[h] = (hosts[h] || 0) + 1; });
-  dialog(`<h3>${esc(curName)}</h3><p>${esc(status())}</p><p>Định dạng <code>map version ${esc(M.version || '?')}</code>.</p>
-   <p><b>Nguồn nhúng:</b> ${Object.entries(hosts).map(([h, c]) => esc(h) + ' ×' + c).join(', ') || 'không có'}</p>
-   <p class="muted">Một số trang (Facebook, Padlet, Wordwall…) có thể từ chối hiển thị trong khung nhúng tùy chính sách của họ; khi đó dùng “Mở tab mới”.</p>`);
-}
+function info() { dialog(`<h3>${esc(curName)}</h3><p>${esc(status())}</p><p>Định dạng <code>map version ${esc(M.version || '?')}</code>.</p>`); }
 
 /* ---------- 5. GẮN SỰ KIỆN ---------- */
 const drop = $('#drop');
