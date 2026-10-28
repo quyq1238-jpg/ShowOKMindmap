@@ -9,7 +9,7 @@ const color = c => (c && /^#[0-9a-f]{3,8}$/i.test(c.trim())) ? c.trim() : null;
 function safeUrl(u) {
   try { const x = new URL(u); return (/^https?:$/.test(x.protocol) && !BAD_HOST.test(x.hostname)) ? x.href : null; } catch { return null; }
 }
-
+ 
 /* ---------- 1. BẢO MẬT & BỘ ĐỌC .MM ---------- */
 // Thay thế hàm clean() cũ bằng DOMPurify để chống XSS an toàn tuyệt đối
 function sanitizeRichHTML(rawHtml, rep) {
@@ -31,10 +31,10 @@ function sanitizeRichHTML(rawHtml, rep) {
       a.removeAttribute('href'); // Xóa href nếu protocol nguy hiểm (vd javascript:)
     }
   });
-
+ 
   return cleanHtml;
 }
-
+ 
 function parseNode(el, rep, depth, side) {
   const g = a => el.getAttribute(a);
   const n = { id: g('ID') || 'n' + rep.nodes, depth, children: [], bg: color(g('BACKGROUND_COLOR')), color: color(g('COLOR')),
@@ -43,13 +43,13 @@ function parseNode(el, rep, depth, side) {
   rep.nodes++; rep.depth = Math.max(rep.depth, depth + 1);
   const known = ['ID', 'TEXT', 'BACKGROUND_COLOR', 'COLOR', 'FOLDED', 'LINK', 'POSITION'];
   for (const a of el.attributes) if (!known.includes(a.name)) n.attrs[a.name] = a.value;
-
+ 
   const serializer = new XMLSerializer();
   let rawBodyHTML = '';
   let rawNoteHTML = '';
-
+ 
   if (g('TEXT')) rawBodyHTML += `<p>${g('TEXT').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
-
+ 
   for (const c of el.children) {
     const t = c.localName;
     if (t === 'node') { const k = parseNode(c, rep, depth + 1, n.side); k.parent = n; n.children.push(k); }
@@ -70,11 +70,11 @@ function parseNode(el, rep, depth, side) {
     } else if (t === 'attribute') n.attrs['@' + c.getAttribute('NAME')] = c.getAttribute('VALUE');
     else { rep.unknown[t] = (rep.unknown[t] || 0) + 1; n.extra.push(serializer.serializeToString(c)); }
   }
-
+ 
   const link = safeUrl(g('LINK') || '');
   if (!n.embed && link) n.embed = { kind: 'link', src: link };
   if (n.embed) rep.embeds++;
-
+ 
   // Lưu trữ HTML đã làm sạch
   n.cleanBody = sanitizeRichHTML(rawBodyHTML, rep);
   n.cleanNote = rawNoteHTML ? sanitizeRichHTML(rawNoteHTML, rep) : null;
@@ -86,7 +86,7 @@ function parseNode(el, rep, depth, side) {
   n.el = null; n.w = 0; n.h = 0;
   return n;
 }
-
+ 
 function parseMM(text) {
   if (/<!ENTITY/i.test(text)) throw new Error('Tệp chứa khai báo ENTITY nên bị từ chối vì lý do bảo mật (XXE).');
   const doc = new DOMParser().parseFromString(text, 'application/xml');
@@ -98,12 +98,12 @@ function parseMM(text) {
   const rep = { nodes: 0, depth: 0, embeds: 0, blocked: 0, unknown: {}, dropped: {} };
   return { version: root.getAttribute('version'), root: parseNode(first, rep, 0, 0), rep };
 }
-
+ 
 /* ---------- 2. HIỂN THỊ & VIRTUALIZATION ---------- */
 let M = null, ALL = [], R = null, curName = '', curText = '', curSrcFile = null, sel = null, hits = [], hi = -1;
 const V = { x: 0, y: 0, k: 1 }, vp = $('#viewport'), stage = $('#stage');
 const nodesContainer = $('#nodes');
-
+ 
 // Hàm tạo phần tử DOM (Chỉ gọi khi node chưa có DOM, hỗ trợ Lazy)
 function createDOM(n) {
   const el = document.createElement('div');
@@ -115,13 +115,13 @@ function createDOM(n) {
   const bodyWrap = document.createElement('div'); bodyWrap.className = 'body';
   bodyWrap.appendChild(n.cleanBody.cloneNode(true));
   el.append(bodyWrap);
-
+ 
   if (n.embed) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = '▶ ' + (n.embed.kind === 'iframe' ? 'Nội dung nhúng · ' : 'Liên kết · ') + new URL(n.embed.src).hostname; el.append(c); }
   if (n.children.length && n.depth > 0) { const b = document.createElement('button'); b.className = 'tg'; b.dataset.tg = '1'; b.title = 'Thu gọn/mở rộng nhánh'; el.append(b); n.tg = b; }
   n.el = el;
   return el;
 }
-
+ 
 const vis = n => n.folded ? [] : n.children;
 function sh(n, kids) { const k = kids || vis(n); n.sh = k.length ? Math.max(n.h, k.reduce((a, c) => a + sh(c), 0) + GY * (k.length - 1)) : n.h; return n.sh; }
 function placeKids(n, kids, dir) {
@@ -133,7 +133,7 @@ function placeKids(n, kids, dir) {
     placeKids(c, vis(c), dir);
   }
 }
-
+ 
 // Bóc tách quá trình Tính toán tọa độ
 function layout() {
   const shown = []; 
@@ -152,7 +152,7 @@ function layout() {
     unmeasured.forEach(n => { n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; });
     unmeasured.forEach(n => { n.el.style.visibility = ''; nodesContainer.removeChild(n.el); });
   }
-
+ 
   shown.forEach(n => { if (n.tg) n.tg.textContent = n.folded ? n.children.length : '−'; });
   R.x = -R.w / 2; R.y = -R.h / 2;
   placeKids(R, R.children.filter(c => c.side >= 0), 1); 
@@ -166,7 +166,7 @@ function layout() {
   $('#status').textContent = status();
   renderView(); // Gọi windowing render
 }
-
+ 
 // Viewport Windowing: Chỉ gắn DOM cho các Node nằm trong màn hình
 let renderRaf = 0;
 function renderView() {
@@ -178,7 +178,7 @@ function renderView() {
     const vx = -V.x / V.k, vy = -V.y / V.k;
     const pad = 300; // Vùng đệm để pan không bị giật trắng
     const vRect = { x0: vx - pad, x1: vx + vw + pad, y0: vy - pad, y1: vy + vh + pad };
-
+ 
     let dEdges = '';
     const inViewNodes = new Set();
     
@@ -198,7 +198,7 @@ function renderView() {
          s(c);
       }
     })(R);
-
+ 
     // DOM Diffing hiệu suất cao
     for (const n of inViewNodes) {
       if (!n.el) createDOM(n);
@@ -212,11 +212,11 @@ function renderView() {
       const n = ALL.find(x => x.id === el.dataset.id);
       if (n && !inViewNodes.has(n)) nodesContainer.removeChild(el);
     }
-
+ 
     $('#edges').innerHTML = dEdges;
   });
 }
-
+ 
 function status() {
   const r = M.rep, u = Object.keys(r.unknown), dr = Object.keys(r.dropped);
   return `${r.nodes} nút · ${r.depth} cấp · ${r.embeds} nội dung nhúng/liên kết` + (r.blocked ? ` · ${r.blocked} URL bị chặn (không an toàn)` : '') +
@@ -235,7 +235,7 @@ function centerOn(n) {
   V.x = r.width / 2 - (n.x + n.w / 2) * V.k; V.y = r.height / 2 - (n.y + n.h / 2) * V.k; anim(); apply();
 }
 function setFold(n, f) { if (n.children.length && n.depth > 0) n.folded = f; }
-
+ 
 /* ---------- 3. TƯƠNG TÁC ---------- */
 let moved = false; const ptr = new Map(); let pinch = 0;
 vp.addEventListener('wheel', e => { e.preventDefault(); const r = vp.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
@@ -286,7 +286,7 @@ function showPanel(n) {
   }
 }
 function closePanel() { $('#panel').hidden = true; $('#pBody').replaceChildren(); setTimeout(fit, 0); }
-
+ 
 /* Tìm kiếm tích hợp Windowing */
 function search() {
   const q = norm($('#q').value.trim());
@@ -306,7 +306,7 @@ function goHit(d) {
   setTimeout(() => { if (hits[hi].el) hits[hi].el.classList.add('cur'); }, 50);
   $('#qc').textContent = `${hi + 1}/${hits.length}`;
 }
-
+ 
 /* ---------- 4. QUẢN LÝ FILE ---------- */
 function openMap(text, name, opts = {}) {
   M = parseMM(text); R = M.root; curName = name; curText = text; curSrcFile = opts.file || null; sel = null; hits = [];
@@ -367,7 +367,7 @@ function share() {
   $('#dlmm').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([curText], { type: 'text/xml' })); a.download = slug; a.click(); };
 }
 function info() { dialog(`<h3>${esc(curName)}</h3><p>${esc(status())}</p><p>Định dạng <code>map version ${esc(M.version || '?')}</code>.</p>`); }
-
+ 
 /* ---------- 5. GẮN SỰ KIỆN ---------- */
 const drop = $('#drop');
 $('#pick').onclick = () => $('#file').click(); $('#file').onchange = e => { loadFile(e.target.files[0]); e.target.value = ''; };
@@ -387,14 +387,15 @@ const de = document.documentElement, reqFs = de.requestFullscreen || de.webkitRe
 const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
 const exitFs = () => { const x = document.exitFullscreen || document.webkitExitFullscreen; try { const p = x && x.call(document); p && p.catch && p.catch(() => { }); } catch { } };
 const isFocus = () => $('#work').classList.contains('focus');
-const setFocus = on => { $('#work').classList.toggle('focus', on); $('#bFocusExit').hidden = !on; $('#focusTools').hidden = !on; setTimeout(fit, 150); };
+const setFocus = on => { $('#work').classList.toggle('focus', on); ['#bFocusExit', '#focusTools'].forEach(s => { const x = $(s); if (x) x.hidden = !on; }); setTimeout(fit, 150); };
 const full = () => {
+  if (!$('#bFocusExit')) { fsEl() ? exitFs() : reqFs && reqFs.call(de); return; } // index.html cũ chưa có nút thoát: chỉ dùng toàn màn hình của trình duyệt
   if (isFocus()) { setFocus(false); if (fsEl()) exitFs(); return; }
   setFocus(true);
   if (reqFs) { try { const p = reqFs.call(de); p && p.catch && p.catch(() => { }); } catch { } }
 };
-$('#bFull').onclick = full; $('#bFocusExit').onclick = full;
-$('#fIn').onclick = () => $('#bIn').click(); $('#fOut').onclick = () => $('#bOut').click(); $('#fFit').onclick = () => $('#bFit').click();
+const on = (s, f) => { const x = $(s); if (x) x.onclick = f; };
+on('#bFull', full); on('#bFocusExit', full); on('#fIn', () => $('#bIn').click()); on('#fOut', () => $('#bOut').click()); on('#fFit', () => $('#bFit').click());
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => { if ($('#work').hidden) return; if (!fsEl() && isFocus()) setFocus(false); else setTimeout(fit, 150); }));
 let qt; $('#q').oninput = () => { clearTimeout(qt); qt = setTimeout(search, 180); };
 $('#q').onkeydown = e => { if (e.key === 'Enter') goHit(e.shiftKey ? -1 : 1); if (e.key === 'Escape') e.target.blur(); };
