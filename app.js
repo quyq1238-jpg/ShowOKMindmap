@@ -352,7 +352,7 @@ async function listShared() {
 async function loadShared(file) {
   try {
     if (!/^[\w.\-]+\.mm$/.test(file)) throw new Error('Tên sơ đồ không hợp lệ.');
-    const r = await fetch('maps/' + file); if (!r.ok) throw new Error('Không tìm thấy sơ đồ “' + file + '”');
+    const u = new URL('maps/' + file, location.href); const r = await fetch(u); if (!r.ok) throw new Error('Không tìm thấy sơ đồ “' + file + '” (lỗi ' + r.status + '). Đã thử mở: ' + u.pathname + ' — hãy kiểm tra tệp này có trong thư mục maps trên GitHub, đúng tên và đúng chữ hoa/thường.');
     openMap(await r.text(), file.replace(/\.mm$/, ''), { noRecent: true, file });
   } catch (e) { showErr(e.message); goHome(true); }
 }
