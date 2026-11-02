@@ -57,6 +57,15 @@ kbd{background:#e9ecf5;border-radius:4px;padding:0 5px;border:1px solid var(--bd
 #pBody .pb{max-height:30%;overflow:auto;margin-bottom:8px}
 #pBody iframe{flex:1;min-height:300px;width:100%;border:1px solid var(--bd);border-radius:8px;background:#fff}
 #pBody img{max-width:100%;height:auto}
+/* Toàn màn hình khung nhúng: phóng to cả panel (có thanh tiêu đề + nút thoát), không phóng riêng iframe */
+#pFullExit{display:none}
+#panel.pfull{position:fixed;inset:0;z-index:100;width:100%;max-width:none;min-width:0;border:0;box-shadow:none}
+#panel.pfull #pFull,#panel.pfull #pClose{display:none}
+#panel.pfull #pFullExit{display:inline-flex}
+#panel.pfull .ph{padding-top:max(8px,env(safe-area-inset-top));padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+#panel.pfull #pBody{padding:0;overflow:hidden}
+#panel.pfull #pBody .pb,#panel.pfull .hint{display:none}
+#panel.pfull #pBody iframe{min-height:0;border:0;border-radius:0}
 .hint{margin:0;padding:6px 10px;font-size:12px;border-top:1px solid var(--bd)}
 #status{padding:3px 12px;font-size:12px;color:var(--mut);background:#fff;border-top:1px solid var(--bd);padding-bottom:max(3px,env(safe-area-inset-bottom))}
 dialog{border:0;border-radius:14px;max-width:560px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
