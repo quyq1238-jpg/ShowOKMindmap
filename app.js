@@ -285,7 +285,7 @@ function showPanel(n) {
     } else { const p = document.createElement('p'); p.textContent = 'Nút này là liên kết ngoài. Dùng “Mở tab mới” để xem.'; c.append(p); }
   }
 }
-function closePanel() { $('#panel').hidden = true; $('#pBody').replaceChildren(); setTimeout(fit, 0); }
+function closePanel() { setPanelFull(false); $('#panel').hidden = true; $('#pBody').replaceChildren(); setTimeout(fit, 0); }
 
 /* Tìm kiếm tích hợp Windowing */
 function search() {
@@ -383,7 +383,7 @@ $('#bOut').onclick = () => { const r = vp.getBoundingClientRect(); zoomAt(.8, r.
 $('#bCollapse').onclick = () => { ALL.forEach(n => setFold(n, true)); layout(); fit(); };
 $('#bExpand').onclick = () => { ALL.forEach(n => setFold(n, false)); layout(); fit(); };
 $('#bPanel').onclick = () => { if ($('#panel').hidden) showPanel(sel || R); else closePanel(); setTimeout(fit, 0); };
-$('#pClose').onclick = closePanel; $('#pFull').onclick = () => $('#pBody').requestFullscreen && ($('#pBody').querySelector('iframe') || $('#pBody')).requestFullscreen();
+$('#pClose').onclick = closePanel; 
 // Chế độ chỉ xem sơ đồ: ẩn thanh công cụ + trạng thái, hiện nút nổi (thoát, +, −, vừa khung).
 // Kèm Fullscreen API nếu có (Chrome/Android/iPad, có tiền tố webkit cho Safari cũ); iPhone Safari không hỗ trợ nên chỉ dùng chế độ này.
 const de = document.documentElement, reqFs = de.requestFullscreen || de.webkitRequestFullscreen;
@@ -400,6 +400,26 @@ const full = () => {
 const on = (s, f) => { const x = $(s); if (x) x.onclick = f; };
 on('#bFull', full); on('#bFocusExit', full); on('#fIn', () => $('#bIn').click()); on('#fOut', () => $('#bOut').click()); on('#fFit', () => $('#bFit').click());
 ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => { if ($('#work').hidden) return; if (!fsEl() && isFocus()) setFocus(false); else setTimeout(fit, 150); }));
+// Toàn màn hình khung nhúng: phóng to cả #panel (thanh tiêu đề + nút "Thoát toàn màn hình") thay vì riêng iframe.
+// Có Fullscreen API thì dùng; không có (iPhone Safari) thì chỉ dùng lớp phủ CSS .pfull.
+let pFsReal = false;
+const pIsFull = () => $('#panel').classList.contains('pfull');
+function setPanelFull(on) {
+  const pn = $('#panel');
+  if (on === pIsFull()) return;
+  pn.classList.toggle('pfull', on);
+  if (on) {
+    pFsReal = false;
+    const rq = pn.requestFullscreen || pn.webkitRequestFullscreen;
+    if (rq) { try { const p = rq.call(pn); if (p && p.then) p.then(() => { pFsReal = true; }).catch(() => { }); else pFsReal = true; } catch { } }
+  } else {
+    const wasReal = pFsReal; pFsReal = false;
+    if (wasReal && fsEl() === pn) exitFs();
+  }
+}
+on('#pFull', () => setPanelFull(true)); on('#pFullExit', () => setPanelFull(false));
+// Người dùng bấm Esc (trình duyệt tự thoát toàn màn hình) → đồng bộ lại giao diện
+['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => { if (pIsFull() && pFsReal && fsEl() !== $('#panel')) { pFsReal = false; setPanelFull(false); } }));
 let qt; $('#q').oninput = () => { clearTimeout(qt); qt = setTimeout(search, 180); };
 $('#q').onkeydown = e => { if (e.key === 'Enter') goHit(e.shiftKey ? -1 : 1); if (e.key === 'Escape') e.target.blur(); };
 $('#qNext').onclick = () => goHit(1); $('#qPrev').onclick = () => goHit(-1);
@@ -410,7 +430,7 @@ document.addEventListener('keydown', e => {
   if (k === '/' || ((e.ctrlKey || e.metaKey) && k === 'f')) { e.preventDefault(); $('#q').focus(); }
   else if (k === '+' || k === '=') zoomAt(1.25, r.width / 2, r.height / 2, 1);
   else if (k === '-') zoomAt(.8, r.width / 2, r.height / 2, 1);
-  else if (k === '0') fit(); else if (k.toLowerCase() === 'f') full(); else if (k === 'Escape') closePanel();
+  else if (k === '0') fit(); else if (k.toLowerCase() === 'f') full(); else if (k === 'Escape') pIsFull() ? setPanelFull(false) : closePanel();
 });
 listRecent(); listShared();
 const qm = new URLSearchParams(location.search).get('map'); if (qm) loadShared(qm);
